@@ -412,34 +412,49 @@
 
   /**
    * Сканирование через MultiFormatReader (более надёжный для сложных фото)
+   * Принимает dataUrl изображения
    */
-  function decodeWithMultiFormatReader(imgToDecode) {
-    var canvas = document.createElement("canvas");
-    canvas.width = imgToDecode.naturalWidth || imgToDecode.width;
-    canvas.height = imgToDecode.naturalHeight || imgToDecode.height;
-    var ctx = canvas.getContext("2d");
-    ctx.drawImage(imgToDecode, 0, 0, canvas.width, canvas.height);
+  function decodeWithMultiFormatReader(dataUrl) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () {
+        var canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        var ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-    var luminanceSource = new ZXing.RGBLuminanceSource(
-      imageData.data,
-      canvas.width,
-      canvas.height,
-    );
-    var binaryBitmap = new ZXing.BinaryBitmap(
-      new ZXing.HybridBinarizer(luminanceSource),
-    );
+        var luminanceSource = new ZXing.RGBLuminanceSource(
+          imageData.data,
+          canvas.width,
+          canvas.height,
+        );
+        var binaryBitmap = new ZXing.BinaryBitmap(
+          new ZXing.HybridBinarizer(luminanceSource),
+        );
 
-    var reader = new ZXing.MultiFormatReader();
-    var hints = new Map();
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-      ZXing.BarcodeFormat.DATA_MATRIX,
-    ]);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-    reader.setHints(hints);
+        var reader = new ZXing.MultiFormatReader();
+        var hints = new Map();
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+          ZXing.BarcodeFormat.DATA_MATRIX,
+        ]);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+        reader.setHints(hints);
 
-    return reader.decode(binaryBitmap);
+        try {
+          var result = reader.decode(binaryBitmap);
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = function () {
+        reject(new Error("Failed to load image for MultiFormatReader"));
+      };
+      img.src = dataUrl;
+    });
   }
 
   /**
@@ -601,9 +616,7 @@
             "[DataMatrix] Используем MultiFormatReader с HybridBinarizer",
           );
           try {
-            decodePromise = Promise.resolve(
-              decodeWithMultiFormatReader(imgToDecode),
-            );
+            decodePromise = decodeWithMultiFormatReader(result.dataUrl);
           } catch (err) {
             decodePromise = Promise.reject(err);
           }
