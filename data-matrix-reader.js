@@ -541,7 +541,18 @@
           });
         }
 
-        var codeReader = new ZXing.BrowserDatamatrixCodeReader();
+        // Создаём hints для усиленного поиска
+        var hints = new Map();
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+          ZXing.BarcodeFormat.DATA_MATRIX,
+        ]);
+
+        console.log(
+          "[DataMatrix] Создание ридера с TRY_HARDER и POSSIBLE_FORMATS",
+        );
+
+        var codeReader = new ZXing.BrowserDatamatrixCodeReader(hints);
 
         var timeoutId = setTimeout(function () {
           console.log(
