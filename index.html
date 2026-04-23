@@ -200,7 +200,25 @@
         console.log("[HTML] onReady вызван:", data);
         showSuccess();
         resultLabel.textContent = "Результат:";
-        resultValue.textContent = data.text;
+
+        var html = "<strong>Сырой текст:</strong><br>" + data.text + "<br><br>";
+        html += "<strong>Распарсенные данные:</strong><br>";
+
+        if (data.parsed) {
+          html += "<strong>GTIN:</strong> " + (data.parsed.gtin || "нет") + "<br>";
+          html += "<strong>Серийный номер:</strong> " + (data.parsed.serialNumber || "нет") + "<br>";
+          html += "<strong>Код проверки:</strong> " + (data.parsed.checkCode || "нет") + "<br>";
+          html += "<strong>Подпись:</strong> " + (data.parsed.signature || "нет") + "<br>";
+          html += "<strong>Криптоключ:</strong> " + (data.parsed.cryptoKey || "нет") + "<br>";
+          if (data.parsed.unknown && data.parsed.unknown.length > 0) {
+            html += "<strong>Другие теги:</strong><br>";
+            data.parsed.unknown.forEach(function (item) {
+              html += "&nbsp;&nbsp;" + item.tag + ": " + item.value + "<br>";
+            });
+          }
+        }
+
+        resultValue.innerHTML = html;
         loading.className = "loading";
       });
 

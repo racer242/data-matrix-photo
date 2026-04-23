@@ -26,6 +26,95 @@
   };
 
   /**
+   * Парсер кодов "Честный знак" (GS1 DataMatrix)
+   * Извлекает все теги из строки формата: 01<GTIN>21<Serial>91<Check>...
+   */
+  function parseHonestMark(rawText) {
+    var result = {
+      gtin: "",
+      serialNumber: "",
+      checkCode: "",
+      signature: "",
+      cryptoKey: "",
+      unknown: [],
+    };
+
+    if (!rawText) return result;
+
+    // Паттерны для известных тегов GS1
+    var knownTags = {
+      "01": { field: "gtin", fixedLength: 14 },
+      21: {
+        field: "serialNumber",
+        fixedLength: null,
+        nextTags: ["91", "92", "93"],
+      },
+      91: { field: "checkCode", fixedLength: null },
+      92: { field: "signature", fixedLength: null },
+      93: { field: "cryptoKey", fixedLength: null },
+    };
+
+    var pos = 0;
+    var textLen = rawText.length;
+
+    while (pos < textLen) {
+      // Ищем следующий тег (2 цифры)
+      var tagMatch = rawText.substring(pos, pos + 2);
+      if (knownTags[tagMatch]) {
+        var tagInfo = knownTags[tagMatch];
+        pos += 2; // пропускаем тег
+
+        if (tagInfo.fixedLength) {
+          // Фиксированная длина (GTIN всегда 14 цифр)
+          result[tagInfo.field] = rawText.substring(
+            pos,
+            pos + tagInfo.fixedLength,
+          );
+          pos += tagInfo.fixedLength;
+        } else {
+          // Переменная длина - читаем до следующего тега или конца
+          var valueStart = pos;
+          var valueEnd = textLen;
+
+          // Ищем следующий тег
+          for (var searchPos = pos; searchPos < textLen - 1; searchPos++) {
+            var nextTag = rawText.substring(searchPos, searchPos + 2);
+            if (knownTags[nextTag]) {
+              valueEnd = searchPos;
+              break;
+            }
+          }
+
+          result[tagInfo.field] = rawText.substring(valueStart, valueEnd);
+          pos = valueEnd;
+        }
+      } else {
+        // Неизвестный тег - пробуем прочитать как 2-значный тег + значение
+        var unknownTag = rawText.substring(pos, pos + 2);
+        pos += 2;
+        var valueStart = pos;
+        var valueEnd = textLen;
+
+        for (var searchPos = pos; searchPos < textLen - 1; searchPos++) {
+          var nextTag = rawText.substring(searchPos, searchPos + 2);
+          if (/^\d{2}$/.test(nextTag)) {
+            valueEnd = searchPos;
+            break;
+          }
+        }
+
+        result.unknown.push({
+          tag: unknownTag,
+          value: rawText.substring(valueStart, valueEnd),
+        });
+        pos = valueEnd;
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Динамическая загрузка ZXing библиотеки
    */
   function loadZxing(callback) {
@@ -195,9 +284,13 @@
         .then(function (result) {
           console.log("[DataMatrix] Успешное декодирование!");
           console.log("[DataMatrix] Результат:", result);
+          // Парсим код "Честный знак"
+          var parsed = parseHonestMark(result.text);
+          console.log("[DataMatrix] Распарсенные данные:", parsed);
           if (_callbacks.onReady) {
             _callbacks.onReady({
               text: result.text,
+              parsed: parsed,
               format: result.formatId || "DATA_MATRIX",
               points: result.resultPoints,
             });
