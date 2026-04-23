@@ -24,6 +24,7 @@
     onReady: null,
     onUploadError: null,
     onReadError: null,
+    onAttempt: null,
   };
 
   /**
@@ -106,7 +107,7 @@
 
   /**
    * Поворот изображения на заданный угол через canvas
-   * Возвращает новый Image элемент с повёрнутым изображением
+   * Возвращает объект { image: Image, dataUrl: string } с повёрнутым изображением
    */
   function rotateImage(img, angle) {
     var canvas = document.createElement("canvas");
@@ -132,9 +133,10 @@
       img.naturalHeight,
     );
 
+    var dataUrl = canvas.toDataURL("image/png");
     var rotated = new Image();
-    rotated.src = canvas.toDataURL("image/png");
-    return rotated;
+    rotated.src = dataUrl;
+    return { image: rotated, dataUrl: dataUrl };
   }
 
   /**
@@ -319,10 +321,12 @@
           "градусов",
         );
 
-        var imgToDecode =
+        var rotationResult =
           angle === 0
-            ? _imageData.element
+            ? { image: _imageData.element, dataUrl: _imageData.src }
             : rotateImage(_imageData.element, angle);
+
+        var imgToDecode = rotationResult.image;
 
         console.log(
           "[DataMatrix] Запуск decodeFromImage, размеры:",
@@ -330,6 +334,16 @@
           "x",
           imgToDecode.naturalHeight || imgToDecode.height,
         );
+
+        // Уведомляем о попытке
+        if (_callbacks.onAttempt) {
+          _callbacks.onAttempt({
+            attempt: currentAttempt + 1,
+            maxAttempts: maxAttempts,
+            angle: angle,
+            dataUrl: rotationResult.dataUrl,
+          });
+        }
 
         var codeReader = new ZXing.BrowserDatamatrixCodeReader();
 
@@ -395,6 +409,9 @@
     },
     onReadError: function (fn) {
       _callbacks.onReadError = fn;
+    },
+    onAttempt: function (fn) {
+      _callbacks.onAttempt = fn;
     },
   };
 
