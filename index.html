@@ -260,7 +260,7 @@
         loading.className = "loading";
       });
 
-      // Обработчик попыток - отображаем повёрнутые изображения
+      // Обработчик попыток - отображаем обработанные изображения
       var attemptsContainer = document.getElementById("attempts");
       dataMatrixPhotoReader.onAttempt(function (data) {
         console.log("[HTML] onAttempt вызван:", data);
@@ -271,7 +271,14 @@
 
         var label = document.createElement("div");
         label.className = "attempt-label";
-        label.textContent = "Попытка " + data.attempt + "/" + data.maxAttempts + " — поворот: " + data.angle + "°";
+
+        if (data.type === "contrast") {
+          label.textContent = "Попытка " + data.attempt + "/" + data.maxAttempts + " — " + data.label;
+        } else if (data.type === "bw") {
+          label.textContent = "Попытка " + data.attempt + "/" + data.maxAttempts + " — " + data.label;
+        } else {
+          label.textContent = "Попытка " + data.attempt + "/" + data.maxAttempts + " — " + data.label;
+        }
 
         var img = document.createElement("img");
         img.src = data.dataUrl;
@@ -289,7 +296,7 @@
 
       btnScan.addEventListener("click", function () {
         hideResult();
-        loading.textContent = "Сканирование... (попытка 1/4)";
+        loading.textContent = "Сканирование... (попытка 1/6)";
         loading.className = "loading active";
         // Очищаем предыдущие попытки
         attemptsContainer.innerHTML = "";

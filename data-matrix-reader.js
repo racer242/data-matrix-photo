@@ -106,6 +106,70 @@
   }
 
   /**
+   * Увеличение контраста изображения
+   * factor > 1 для увеличения контраста
+   */
+  function increaseContrast(img, factor) {
+    var canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    var ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+
+    var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var data = imageData.data;
+
+    for (var i = 0; i < data.length; i += 4) {
+      data[i] = clamp((data[i] - 128) * factor + 128); // R
+      data[i + 1] = clamp((data[i + 1] - 128) * factor + 128); // G
+      data[i + 2] = clamp((data[i + 2] - 128) * factor + 128); // B
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    var dataUrl = canvas.toDataURL("image/png");
+    var result = new Image();
+    result.src = dataUrl;
+    return { image: result, dataUrl: dataUrl };
+  }
+
+  /**
+   * Преобразование изображения в черно-белый (бинаризация)
+   */
+  function toBlackWhite(img) {
+    var canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    var ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+
+    var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var data = imageData.data;
+
+    for (var i = 0; i < data.length; i += 4) {
+      // Grayscale
+      var gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+      // Binary threshold
+      var val = gray > 128 ? 255 : 0;
+      data[i] = val;
+      data[i + 1] = val;
+      data[i + 2] = val;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    var dataUrl = canvas.toDataURL("image/png");
+    var result = new Image();
+    result.src = dataUrl;
+    return { image: result, dataUrl: dataUrl };
+  }
+
+  /**
+   * Ограничение значения в диапазоне 0-255
+   */
+  function clamp(value) {
+    return Math.max(0, Math.min(255, value));
+  }
+
+  /**
    * Поворот изображения на заданный угол через canvas
    * Возвращает объект { image: Image, dataUrl: string } с повёрнутым изображением
    */
@@ -295,38 +359,63 @@
     loadZxing(function () {
       console.log("[DataMatrix] ZXing готова, начинаем декодирование");
 
-      var angles = [0, 90, 180, 270];
+      // Стратегия попыток:
+      // 1. Увеличение контраста
+      // 2. Черно-белое изображение
+      // 3. Оригинальное + поворот 0°
+      // 4. Поворот 90°
+      // 5. Поворот 180°
+      // 6. Поворот 270°
       var currentAttempt = 0;
-      var maxAttempts = angles.length;
+      var maxAttempts = 6;
+
+      var attemptLabels = [
+        { type: "contrast", name: "Увеличение контраста" },
+        { type: "bw", name: "Черно-белое" },
+        { type: "rotate", angle: 0, name: "Оригинал (0°)" },
+        { type: "rotate", angle: 90, name: "Поворот 90°" },
+        { type: "rotate", angle: 180, name: "Поворот 180°" },
+        { type: "rotate", angle: 270, name: "Поворот 270°" },
+      ];
 
       function tryDecode() {
         if (currentAttempt >= maxAttempts) {
           console.log("[DataMatrix] Все попытки исчерпаны");
           if (_callbacks.onReadError) {
             _callbacks.onReadError({
-              message: "Data Matrix код не найден на изображении (4 попытки)",
+              message: "Data Matrix код не найден на изображении (6 попыток)",
             });
           }
           return;
         }
 
-        var angle = angles[currentAttempt];
+        var attemptInfo = attemptLabels[currentAttempt];
+        var result;
+
         console.log(
           "[DataMatrix] Попытка",
           currentAttempt + 1,
           "из",
           maxAttempts,
-          "- поворот:",
-          angle,
-          "градусов",
+          "-",
+          attemptInfo.name,
         );
 
-        var rotationResult =
-          angle === 0
-            ? { image: _imageData.element, dataUrl: _imageData.src }
-            : rotateImage(_imageData.element, angle);
+        // Подготавливаем изображение в зависимости от типа попытки
+        if (attemptInfo.type === "contrast") {
+          result = increaseContrast(_imageData.element, 2.0);
+        } else if (attemptInfo.type === "bw") {
+          result = toBlackWhite(_imageData.element);
+        } else {
+          var angle = attemptInfo.angle;
+          if (angle === 0) {
+            result = { image: _imageData.element, dataUrl: _imageData.src };
+          } else {
+            result = rotateImage(_imageData.element, angle);
+          }
+        }
 
-        var imgToDecode = rotationResult.image;
+        var imgToDecode = result.image;
 
         console.log(
           "[DataMatrix] Запуск decodeFromImage, размеры:",
@@ -337,11 +426,15 @@
 
         // Уведомляем о попытке
         if (_callbacks.onAttempt) {
+          var angleValue =
+            attemptInfo.type === "rotate" ? attemptInfo.angle : null;
           _callbacks.onAttempt({
             attempt: currentAttempt + 1,
             maxAttempts: maxAttempts,
-            angle: angle,
-            dataUrl: rotationResult.dataUrl,
+            angle: angleValue,
+            type: attemptInfo.type,
+            label: attemptInfo.name,
+            dataUrl: result.dataUrl,
           });
         }
 
@@ -361,19 +454,20 @@
 
         codeReader
           .decodeFromImage(imgToDecode)
-          .then(function (result) {
+          .then(function (decodeResult) {
             clearTimeout(timeoutId);
             console.log("[DataMatrix] Успешное декодирование!");
-            console.log("[DataMatrix] Результат:", result);
-            var parsed = parseHonestMark(result.text);
+            console.log("[DataMatrix] Результат:", decodeResult);
+            var parsed = parseHonestMark(decodeResult.text);
             console.log("[DataMatrix] Распарсенные данные:", parsed);
             if (_callbacks.onReady) {
               _callbacks.onReady({
-                text: result.text,
+                text: decodeResult.text,
                 parsed: parsed,
-                format: result.formatId || "DATA_MATRIX",
-                points: result.resultPoints,
-                rotation: angle,
+                format: decodeResult.formatId || "DATA_MATRIX",
+                points: decodeResult.resultPoints,
+                attemptType: attemptInfo.type,
+                attemptLabel: attemptInfo.name,
               });
             }
           })
