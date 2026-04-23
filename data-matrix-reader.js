@@ -106,6 +106,41 @@
   }
 
   /**
+   * Приближение (кроп) центральной части изображения
+   * percentage - сколько оставить от оригинала (0.25 = 25%, 0.5 = 50%)
+   */
+  function zoomImage(img, percentage) {
+    var canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    var ctx = canvas.getContext("2d");
+
+    // Вычисляем размеры центральной части
+    var cropWidth = img.naturalWidth * percentage;
+    var cropHeight = img.naturalHeight * percentage;
+    var cropX = (img.naturalWidth - cropWidth) / 2;
+    var cropY = (img.naturalHeight - cropHeight) / 2;
+
+    // Рисуем центральную часть, растягивая на весь canvas
+    ctx.drawImage(
+      img,
+      cropX,
+      cropY,
+      cropWidth,
+      cropHeight, // source
+      0,
+      0,
+      img.naturalWidth,
+      img.naturalHeight, // destination
+    );
+
+    var dataUrl = canvas.toDataURL("image/png");
+    var result = new Image();
+    result.src = dataUrl;
+    return { image: result, dataUrl: dataUrl };
+  }
+
+  /**
    * Увеличение контраста изображения
    * factor > 1 для увеличения контраста
    */
@@ -360,16 +395,20 @@
       console.log("[DataMatrix] ZXing готова, начинаем декодирование");
 
       // Стратегия попыток:
-      // 1. Увеличение контраста
-      // 2. Черно-белое изображение
-      // 3. Оригинальное + поворот 0°
-      // 4. Поворот 90°
-      // 5. Поворот 180°
-      // 6. Поворот 270°
+      // 1. Приближение 25% (кроп центральной части)
+      // 2. Приближение 50% (кроп центральной части)
+      // 3. Увеличение контраста
+      // 4. Черно-белое изображение
+      // 5. Оригинальное + поворот 0°
+      // 6. Поворот 90°
+      // 7. Поворот 180°
+      // 8. Поворот 270°
       var currentAttempt = 0;
-      var maxAttempts = 6;
+      var maxAttempts = 8;
 
       var attemptLabels = [
+        { type: "zoom", percentage: 0.25, name: "Приближение 25%" },
+        { type: "zoom", percentage: 0.5, name: "Приближение 50%" },
         { type: "contrast", name: "Увеличение контраста" },
         { type: "bw", name: "Черно-белое" },
         { type: "rotate", angle: 0, name: "Оригинал (0°)" },
@@ -383,7 +422,7 @@
           console.log("[DataMatrix] Все попытки исчерпаны");
           if (_callbacks.onReadError) {
             _callbacks.onReadError({
-              message: "Data Matrix код не найден на изображении (6 попыток)",
+              message: "Data Matrix код не найден на изображении (8 попыток)",
             });
           }
           return;
@@ -402,7 +441,9 @@
         );
 
         // Подготавливаем изображение в зависимости от типа попытки
-        if (attemptInfo.type === "contrast") {
+        if (attemptInfo.type === "zoom") {
+          result = zoomImage(_imageData.element, attemptInfo.percentage);
+        } else if (attemptInfo.type === "contrast") {
           result = increaseContrast(_imageData.element, 2.0);
         } else if (attemptInfo.type === "bw") {
           result = toBlackWhite(_imageData.element);
