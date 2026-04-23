@@ -204,6 +204,9 @@
         var html = "<strong>Сырой текст:</strong><br>" + data.text + "<br><br>";
         html += "<strong>Распарсенные данные:</strong><br>";
 
+        if (data.rotation !== undefined && data.rotation !== 0) {
+          html += "<strong>Поворот:</strong> " + data.rotation + "°<br>";
+        }
         if (data.parsed) {
           html += "<strong>GTIN:</strong> " + (data.parsed.gtin || "нет") + "<br>";
           html += "<strong>Серийный номер:</strong> " + (data.parsed.serialNumber || "нет") + "<br>";
@@ -237,6 +240,7 @@
 
       btnScan.addEventListener("click", function () {
         hideResult();
+        loading.textContent = "Сканирование... (попытка 1/4)";
         loading.className = "loading active";
         dataMatrixPhotoReader.start();
       });

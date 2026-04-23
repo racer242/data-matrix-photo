@@ -26,19 +26,36 @@ JavaScript-библиотека для сканирования Data Matrix ко
 
 ### Методы
 
-| Метод                            | Описание                                        |
-| -------------------------------- | ----------------------------------------------- |
-| `dataMatrixPhotoReader.upload()` | Открывает диалог выбора файла изображения       |
-| `dataMatrixPhotoReader.start()`  | Запускает сканирование загруженного изображения |
+| Метод                                  | Описание                                    |
+| -------------------------------------- | ------------------------------------------- |
+| `dataMatrixPhotoReader.upload()`       | Открывает диалог выбора файла изображения   |
+| `dataMatrixPhotoReader.start(options)` | Запускает сканирование с опциями (см. ниже) |
+
+### Опции start(options)
+
+| Параметр                | Описание                                             | По умолчанию |
+| ----------------------- | ---------------------------------------------------- | ------------ |
+| `options.decodeTimeout` | Таймаут на одну попытку сканирования в миллисекундах | `5000`       |
+
+### Механизм повторов
+
+Библиотека автоматически делает до 4 попыток сканирования с поворотом изображения:
+
+- Попытка 1: 0° (без поворота)
+- Попытка 2: 90°
+- Попытка 3: 180°
+- Попытка 4: 270°
+
+Если все попытки исчерпаны, вызывается `onReadError`.
 
 ### Обработчики событий
 
-| Обработчик                                | Описание                                       | Возвращаемые данные                |
-| ----------------------------------------- | ---------------------------------------------- | ---------------------------------- |
-| `dataMatrixPhotoReader.onUpload(fn)`      | Вызывается после успешной загрузки изображения | `{ src, width, height }`           |
-| `dataMatrixPhotoReader.onReady(fn)`       | Вызывается после успешного распознавания       | `{ text, parsed, format, points }` |
-| `dataMatrixPhotoReader.onUploadError(fn)` | Вызывается при ошибке загрузки                 | `{ message }`                      |
-| `dataMatrixPhotoReader.onReadError(fn)`   | Вызывается при ошибке распознавания            | `{ message }`                      |
+| Обработчик                                | Описание                                       | Возвращаемые данные                          |
+| ----------------------------------------- | ---------------------------------------------- | -------------------------------------------- |
+| `dataMatrixPhotoReader.onUpload(fn)`      | Вызывается после успешной загрузки изображения | `{ src, width, height }`                     |
+| `dataMatrixPhotoReader.onReady(fn)`       | Вызывается после успешного распознавания       | `{ text, parsed, format, points, rotation }` |
+| `dataMatrixPhotoReader.onUploadError(fn)` | Вызывается при ошибке загрузки                 | `{ message }`                                |
+| `dataMatrixPhotoReader.onReadError(fn)`   | Вызывается при ошибке распознавания            | `{ message }`                                |
 
 ## Формат данных onReady
 
@@ -70,7 +87,9 @@ JavaScript-библиотека для сканирования Data Matrix ко
   </head>
   <body>
     <button onclick="dataMatrixPhotoReader.upload()">Загрузить</button>
-    <button onclick="dataMatrixPhotoReader.start()">Считать</button>
+    <button onclick="dataMatrixPhotoReader.start({ decodeTimeout: 3000 })">
+      Считать
+    </button>
     <div id="output"></div>
 
     <script src="data-matrix-reader.js"></script>

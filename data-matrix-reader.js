@@ -4,7 +4,8 @@
  *
  * API:
  *   dataMatrixPhotoReader.upload()        - загрузить фото
- *   dataMatrixPhotoReader.start()         - начать сканирование
+ *   dataMatrixPhotoReader.start(options)  - начать сканирование
+ *     options.decodeTimeout - таймаут на одну попытку (мс), по умолчанию 5000
  *   dataMatrixPhotoReader.onUpload(fn)    - обработчик загрузки
  *   dataMatrixPhotoReader.onReady(fn)     - обработчик результата
  *   dataMatrixPhotoReader.onUploadError(fn) - обработчик ошибки загрузки
@@ -51,13 +52,12 @@
     console.log("[DataMatrix] parseHonestMark: очищенный текст =", text);
 
     // Паттерны для известных тегов GS1
-    var knownTags = {
-      "01": { field: "gtin", fixedLength: 14 },
-      21: { field: "serialNumber", fixedLength: null },
-      91: { field: "checkCode", fixedLength: null },
-      92: { field: "signature", fixedLength: null },
-      93: { field: "cryptoKey", fixedLength: null },
-    };
+    var knownTags = {};
+    knownTags["01"] = { field: "gtin", fixedLength: 14 };
+    knownTags["21"] = { field: "serialNumber", fixedLength: null };
+    knownTags["91"] = { field: "checkCode", fixedLength: null };
+    knownTags["92"] = { field: "signature", fixedLength: null };
+    knownTags["93"] = { field: "cryptoKey", fixedLength: null };
 
     var pos = 0;
     var textLen = text.length;
@@ -102,6 +102,39 @@
     }
 
     return result;
+  }
+
+  /**
+   * Поворот изображения на заданный угол через canvas
+   * Возвращает новый Image элемент с повёрнутым изображением
+   */
+  function rotateImage(img, angle) {
+    var canvas = document.createElement("canvas");
+    var ctx = canvas.getContext("2d");
+    var radians = (angle * Math.PI) / 180;
+
+    // Для 90 и 270 градусов меняем ширину и высоту
+    if (angle === 90 || angle === 270) {
+      canvas.width = img.naturalHeight;
+      canvas.height = img.naturalWidth;
+    } else {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+    }
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(radians);
+    ctx.drawImage(
+      img,
+      -img.naturalWidth / 2,
+      -img.naturalHeight / 2,
+      img.naturalWidth,
+      img.naturalHeight,
+    );
+
+    var rotated = new Image();
+    rotated.src = canvas.toDataURL("image/png");
+    return rotated;
   }
 
   /**
@@ -237,10 +270,14 @@
   }
 
   /**
-   * Запуск сканирования
-   * Используем подход из официального примера: BrowserDatamatrixCodeReader.decodeFromImage()
+   * Запуск сканирования с поддержкой поворота и таймаута
+   * @param {Object} options - опции сканирования
+   * @param {number} options.decodeTimeout - таймаут на одну попытку в мс (по умолчанию 5000)
    */
-  function start() {
+  function start(options) {
+    var opts = options || {};
+    var decodeTimeout = opts.decodeTimeout || 5000;
+
     console.log("[DataMatrix] start: запуск сканирования");
     if (!_imageData) {
       console.error("[DataMatrix] Изображение не загружено");
@@ -256,49 +293,90 @@
     loadZxing(function () {
       console.log("[DataMatrix] ZXing готова, начинаем декодирование");
 
-      // Создаём новый экземпляр для каждого сканирования (как в официальном примере)
-      var codeReader = new ZXing.BrowserDatamatrixCodeReader();
-      console.log("[DataMatrix] BrowserDatamatrixCodeReader создан");
+      var angles = [0, 90, 180, 270];
+      var currentAttempt = 0;
+      var maxAttempts = angles.length;
 
-      // Клонируем изображение (как в официальном примере)
-      var img = _imageData.element.cloneNode(true);
-      console.log(
-        "[DataMatrix] Запуск decodeFromImage, размеры:",
-        img.naturalWidth,
-        "x",
-        img.naturalHeight,
-      );
-
-      codeReader
-        .decodeFromImage(img)
-        .then(function (result) {
-          console.log("[DataMatrix] Успешное декодирование!");
-          console.log("[DataMatrix] Результат:", result);
-          // Парсим код "Честный знак"
-          var parsed = parseHonestMark(result.text);
-          console.log("[DataMatrix] Распарсенные данные:", parsed);
-          if (_callbacks.onReady) {
-            _callbacks.onReady({
-              text: result.text,
-              parsed: parsed,
-              format: result.formatId || "DATA_MATRIX",
-              points: result.resultPoints,
-            });
-          }
-        })
-        .catch(function (err) {
-          console.log("[DataMatrix] Декодирование не удалось:", err);
+      function tryDecode() {
+        if (currentAttempt >= maxAttempts) {
+          console.log("[DataMatrix] Все попытки исчерпаны");
           if (_callbacks.onReadError) {
             _callbacks.onReadError({
-              message:
-                typeof err === "string"
-                  ? err
-                  : err.message || "Data Matrix код не найден на изображении",
+              message: "Data Matrix код не найден на изображении (4 попытки)",
             });
           }
-        });
+          return;
+        }
 
-      console.log("[DataMatrix] Запущено декодирование");
+        var angle = angles[currentAttempt];
+        console.log(
+          "[DataMatrix] Попытка",
+          currentAttempt + 1,
+          "из",
+          maxAttempts,
+          "- поворот:",
+          angle,
+          "градусов",
+        );
+
+        var imgToDecode =
+          angle === 0
+            ? _imageData.element
+            : rotateImage(_imageData.element, angle);
+
+        console.log(
+          "[DataMatrix] Запуск decodeFromImage, размеры:",
+          imgToDecode.naturalWidth || imgToDecode.width,
+          "x",
+          imgToDecode.naturalHeight || imgToDecode.height,
+        );
+
+        var codeReader = new ZXing.BrowserDatamatrixCodeReader();
+
+        var timeoutId = setTimeout(function () {
+          console.log(
+            "[DataMatrix] Таймаут попытки",
+            currentAttempt + 1,
+            "(",
+            decodeTimeout,
+            "мс)",
+          );
+          currentAttempt++;
+          tryDecode();
+        }, decodeTimeout);
+
+        codeReader
+          .decodeFromImage(imgToDecode)
+          .then(function (result) {
+            clearTimeout(timeoutId);
+            console.log("[DataMatrix] Успешное декодирование!");
+            console.log("[DataMatrix] Результат:", result);
+            var parsed = parseHonestMark(result.text);
+            console.log("[DataMatrix] Распарсенные данные:", parsed);
+            if (_callbacks.onReady) {
+              _callbacks.onReady({
+                text: result.text,
+                parsed: parsed,
+                format: result.formatId || "DATA_MATRIX",
+                points: result.resultPoints,
+                rotation: angle,
+              });
+            }
+          })
+          .catch(function (err) {
+            clearTimeout(timeoutId);
+            console.log(
+              "[DataMatrix] Попытка",
+              currentAttempt + 1,
+              "не удалась:",
+              err,
+            );
+            currentAttempt++;
+            tryDecode();
+          });
+      }
+
+      tryDecode();
     });
   }
 
