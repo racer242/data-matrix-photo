@@ -300,7 +300,7 @@
         loading.className = "loading active";
         // Очищаем предыдущие попытки
         attemptsContainer.innerHTML = "";
-        dataMatrixPhotoReader.start({ maxSize: 2000 });
+        dataMatrixPhotoReader.start({ maxSize: 2000, scanMethod: "multiFormat" });
       });
     })();
   </script>

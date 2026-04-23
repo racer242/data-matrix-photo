@@ -411,15 +411,49 @@
   }
 
   /**
+   * Сканирование через MultiFormatReader (более надёжный для сложных фото)
+   */
+  function decodeWithMultiFormatReader(imgToDecode) {
+    var canvas = document.createElement("canvas");
+    canvas.width = imgToDecode.naturalWidth || imgToDecode.width;
+    canvas.height = imgToDecode.naturalHeight || imgToDecode.height;
+    var ctx = canvas.getContext("2d");
+    ctx.drawImage(imgToDecode, 0, 0, canvas.width, canvas.height);
+
+    var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    var luminanceSource = new ZXing.RGBLuminanceSource(
+      imageData.data,
+      canvas.width,
+      canvas.height,
+    );
+    var binaryBitmap = new ZXing.BinaryBitmap(
+      new ZXing.HybridBinarizer(luminanceSource),
+    );
+
+    var reader = new ZXing.MultiFormatReader();
+    var hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.DATA_MATRIX,
+    ]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    reader.setHints(hints);
+
+    return reader.decode(binaryBitmap);
+  }
+
+  /**
    * Запуск сканирования с поддержкой поворота и таймаута
    * @param {Object} options - опции сканирования
    * @param {number} options.decodeTimeout - таймаут на одну попытку в мс (по умолчанию 5000)
    * @param {number} options.maxSize - максимальный размер изображения по наибольшей стороне (по умолчанию не задан)
+   * @param {string} options.scanMethod - метод сканирования: 'browser' (по умолчанию) или 'multiFormat'
    */
   function start(options) {
     var opts = options || {};
     var decodeTimeout = opts.decodeTimeout || 5000;
     var maxSize = opts.maxSize || null;
+    var scanMethod = opts.scanMethod || "browser";
 
     console.log("[DataMatrix] start: запуск сканирования");
     if (!_imageData) {
@@ -466,6 +500,11 @@
 
       var attemptLabels = [
         { type: "rotate", angle: 0, name: "Оригинал (0°)" },
+        { type: "rotate", angle: 10, name: "Поворот 10°" },
+        { type: "rotate", angle: 20, name: "Поворот 20°" },
+        { type: "rotate", angle: 30, name: "Поворот 30°" },
+        { type: "rotate", angle: 40, name: "Поворот 40°" },
+        { type: "rotate", angle: 50, name: "Поворот 50°" },
         { type: "zoom", percentage: 0.75, name: "Приближение 25%" },
         { type: "zoom", percentage: 0.5, name: "Приближение 50%" },
         { type: "contrast", name: "Увеличение контраста" },
@@ -541,18 +580,7 @@
           });
         }
 
-        // Создаём hints для усиленного поиска
-        var hints = new Map();
-        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-          ZXing.BarcodeFormat.DATA_MATRIX,
-        ]);
-
-        console.log(
-          "[DataMatrix] Создание ридера с TRY_HARDER и POSSIBLE_FORMATS",
-        );
-
-        var codeReader = new ZXing.BrowserDatamatrixCodeReader(hints);
+        console.log("[DataMatrix] Метод сканирования:", scanMethod);
 
         var timeoutId = setTimeout(function () {
           console.log(
@@ -566,8 +594,36 @@
           tryDecode();
         }, decodeTimeout);
 
-        codeReader
-          .decodeFromImage(imgToDecode)
+        var decodePromise;
+
+        if (scanMethod === "multiFormat") {
+          console.log(
+            "[DataMatrix] Используем MultiFormatReader с HybridBinarizer",
+          );
+          try {
+            decodePromise = Promise.resolve(
+              decodeWithMultiFormatReader(imgToDecode),
+            );
+          } catch (err) {
+            decodePromise = Promise.reject(err);
+          }
+        } else {
+          // Создаём hints для усиленного поиска
+          var hints = new Map();
+          hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+          hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+            ZXing.BarcodeFormat.DATA_MATRIX,
+          ]);
+
+          console.log(
+            "[DataMatrix] Используем BrowserDatamatrixCodeReader с TRY_HARDER и POSSIBLE_FORMATS",
+          );
+
+          var codeReader = new ZXing.BrowserDatamatrixCodeReader(hints);
+          decodePromise = codeReader.decodeFromImage(imgToDecode);
+        }
+
+        decodePromise
           .then(function (decodeResult) {
             clearTimeout(timeoutId);
             console.log("[DataMatrix] Успешное декодирование!");
