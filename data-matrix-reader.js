@@ -205,6 +205,46 @@
   }
 
   /**
+   * Масштабирование изображения по наибольшей стороне
+   * Если изображение больше maxSize, оно уменьшается
+   */
+  function scaleImage(img, maxSize) {
+    var width = img.naturalWidth;
+    var height = img.naturalHeight;
+
+    if (width <= maxSize && height <= maxSize) {
+      // Изображение уже в пределах допустимого размера
+      return { image: img, dataUrl: _imageData.src, scaled: false };
+    }
+
+    var scale = maxSize / Math.max(width, height);
+    var newWidth = Math.round(width * scale);
+    var newHeight = Math.round(height * scale);
+
+    console.log(
+      "[DataMatrix] scaleImage: масштабирование с",
+      width,
+      "x",
+      height,
+      "до",
+      newWidth,
+      "x",
+      newHeight,
+    );
+
+    var canvas = document.createElement("canvas");
+    canvas.width = newWidth;
+    canvas.height = newHeight;
+    var ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+    var dataUrl = canvas.toDataURL("image/png");
+    var result = new Image();
+    result.src = dataUrl;
+    return { image: result, dataUrl: dataUrl, scaled: true };
+  }
+
+  /**
    * Поворот изображения на заданный угол через canvas
    * Возвращает объект { image: Image, dataUrl: string } с повёрнутым изображением
    */
@@ -374,10 +414,12 @@
    * Запуск сканирования с поддержкой поворота и таймаута
    * @param {Object} options - опции сканирования
    * @param {number} options.decodeTimeout - таймаут на одну попытку в мс (по умолчанию 5000)
+   * @param {number} options.maxSize - максимальный размер изображения по наибольшей стороне (по умолчанию не задан)
    */
   function start(options) {
     var opts = options || {};
     var decodeTimeout = opts.decodeTimeout || 5000;
+    var maxSize = opts.maxSize || null;
 
     console.log("[DataMatrix] start: запуск сканирования");
     if (!_imageData) {
@@ -390,6 +432,22 @@
       return;
     }
     console.log("[DataMatrix] Изображение загружено, запуск ZXing...");
+
+    // Масштабирование изображения если задан maxSize
+    var sourceImage = _imageData.element;
+    if (maxSize) {
+      console.log(
+        "[DataMatrix] Масштабирование изображения, maxSize:",
+        maxSize,
+      );
+      var scaledResult = scaleImage(sourceImage, maxSize);
+      if (scaledResult.scaled) {
+        sourceImage = scaledResult.image;
+        console.log("[DataMatrix] Изображение масштабировано");
+      } else {
+        console.log("[DataMatrix] Изображение не требует масштабирования");
+      }
+    }
 
     loadZxing(function () {
       console.log("[DataMatrix] ZXing готова, начинаем декодирование");
@@ -407,11 +465,11 @@
       var maxAttempts = 8;
 
       var attemptLabels = [
-        { type: "zoom", percentage: 0.25, name: "Приближение 25%" },
+        { type: "rotate", angle: 0, name: "Оригинал (0°)" },
+        { type: "zoom", percentage: 0.75, name: "Приближение 25%" },
         { type: "zoom", percentage: 0.5, name: "Приближение 50%" },
         { type: "contrast", name: "Увеличение контраста" },
         { type: "bw", name: "Черно-белое" },
-        { type: "rotate", angle: 0, name: "Оригинал (0°)" },
         { type: "rotate", angle: 90, name: "Поворот 90°" },
         { type: "rotate", angle: 180, name: "Поворот 180°" },
         { type: "rotate", angle: 270, name: "Поворот 270°" },
@@ -441,18 +499,22 @@
         );
 
         // Подготавливаем изображение в зависимости от типа попытки
+        // Используем sourceImage (который может быть масштабирован)
         if (attemptInfo.type === "zoom") {
-          result = zoomImage(_imageData.element, attemptInfo.percentage);
+          result = zoomImage(sourceImage, attemptInfo.percentage);
         } else if (attemptInfo.type === "contrast") {
-          result = increaseContrast(_imageData.element, 2.0);
+          result = increaseContrast(sourceImage, 2.0);
         } else if (attemptInfo.type === "bw") {
-          result = toBlackWhite(_imageData.element);
+          result = toBlackWhite(sourceImage);
         } else {
           var angle = attemptInfo.angle;
           if (angle === 0) {
-            result = { image: _imageData.element, dataUrl: _imageData.src };
+            result = {
+              image: sourceImage,
+              dataUrl: sourceImage.src || _imageData.src,
+            };
           } else {
-            result = rotateImage(_imageData.element, angle);
+            result = rotateImage(sourceImage, angle);
           }
         }
 
