@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Matrix Photo Reader - Пример использования</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        
+        .btn-secondary {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #1e7e34;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .preview-container {
+            margin: 20px 0;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fafafa;
+        }
+        
+        .preview-placeholder {
+            color: #999;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        #imagePreview {
+            max-width: 100%;
+            max-height: 500px;
+            display: none;
+            border-radius: 4px;
+        }
+        
+        .result-container {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 6px;
+            display: none;
+        }
+        
+        .result-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .result-error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .result-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .result-data {
+            font-family: monospace;
+            font-size: 14px;
+            word-break: break-all;
+        }
+        
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .status-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Data Matrix Photo Reader</h1>
+        <p class="subtitle">Загрузите изображение с Data Matrix кодом для распознавания</p>
+        
+        <div class="controls">
+            <button id="uploadBtn" class="btn-primary">📁 Загрузить фото</button>
+            <button id="scanBtn" class="btn-secondary" disabled>🔍 Считать код</button>
+        </div>
+        
+        <div class="preview-container">
+            <div id="previewPlaceholder" class="preview-placeholder">
+                <p>📷 Изображение не загружено</p>
+                <p>Нажмите "Загрузить фото" чтобы выбрать файл</p>
+            </div>
+            <img id="imagePreview" alt="Preview">
+        </div>
+        
+        <div id="statusContainer" class="status status-info" style="display: none;"></div>
+        
+        <div id="resultContainer" class="result-container">
+            <div class="result-title"></div>
+            <div class="result-data"></div>
+        </div>
+    </div>
+
+    <!-- Подключение библиотеки -->
+    <script src="../src/data-matrix-reader.js"></script>
+    
+    <script>
+        // Инициализация переменных
+        var isImageLoaded = false;
+        
+        // Элементы DOM
+        var uploadBtn = document.getElementById('uploadBtn');
+        var scanBtn = document.getElementById('scanBtn');
+        var imagePreview = document.getElementById('imagePreview');
+        var previewPlaceholder = document.getElementById('previewPlaceholder');
+        var resultContainer = document.getElementById('resultContainer');
+        var statusContainer = document.getElementById('statusContainer');
+        
+        // Настройка обработчиков событий библиотеки
+        dataMatrixPhotoReader
+            .onUpload(function(event) {
+                // Фото успешно загружено
+                console.log('Фото загружено:', event);
+                
+                // Отображаем превью
+                imagePreview.src = event.dataUrl;
+                imagePreview.style.display = 'block';
+                previewPlaceholder.style.display = 'none';
+                
+                // Активируем кнопку сканирования
+                isImageLoaded = true;
+                scanBtn.disabled = false;
+                
+                showStatus('Фото готово к сканированию');
+                hideResult();
+            })
+            .onReady(function(result) {
+                // Код успешно распознан
+                console.log('Data Matrix распознан:', result);
+                
+                showResult('success', '✅ Data Matrix код найден!', 
+                    'Данные: ' + (result.data || 'N/A') + 
+                    '<br>Формат: ' + (result.format || 'DataMatrix'));
+                
+                hideStatus();
+                scanBtn.disabled = false;
+            })
+            .onUploadError(function(error) {
+                // Ошибка загрузки
+                console.error('Ошибка загрузки:', error);
+                
+                showResult('error', '❌ Ошибка загрузки', 
+                    error.message || 'Не удалось загрузить изображение');
+                
+                hideStatus();
+                scanBtn.disabled = true;
+                isImageLoaded = false;
+            })
+            .onReadError(function(error) {
+                // Ошибка чтения
+                console.error('Ошибка чтения:', error);
+                
+                showResult('error', '❌ Data Matrix не найден', 
+                    error.message || 'Не удалось распознать код на изображении.<br>' +
+                    'Убедитесь, что код хорошо освещен и находится в фокусе.');
+                
+                hideStatus();
+                scanBtn.disabled = false;
+            });
+        
+        // Обработчик кнопки загрузки
+        uploadBtn.addEventListener('click', function() {
+            hideResult();
+            showStatus('Выберите изображение...');
+            dataMatrixPhotoReader.upload();
+        });
+        
+        // Обработчик кнопки сканирования
+        scanBtn.addEventListener('click', function() {
+            if (!isImageLoaded) {
+                showResult('error', 'Ошибка', 'Сначала загрузите изображение');
+                return;
+            }
+            
+            scanBtn.disabled = true;
+            showStatus('<span class="loading"></span>Сканирование...');
+            
+            // Запускаем сканирование
+            dataMatrixPhotoReader.start();
+        });
+        
+        // Вспомогательные функции
+        function showStatus(message) {
+            statusContainer.innerHTML = message;
+            statusContainer.style.display = 'block';
+            statusContainer.className = 'status status-info';
+        }
+        
+        function hideStatus() {
+            statusContainer.style.display = 'none';
+        }
+        
+        function showResult(type, title, data) {
+            resultContainer.className = 'result-container result-' + type;
+            resultContainer.querySelector('.result-title').textContent = title;
+            resultContainer.querySelector('.result-data').innerHTML = data;
+            resultContainer.style.display = 'block';
+        }
+        
+        function hideResult() {
+            resultContainer.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
