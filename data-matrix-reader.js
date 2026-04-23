@@ -28,6 +28,10 @@
   /**
    * Парсер кодов "Честный знак" (GS1 DataMatrix)
    * Извлекает все теги из строки формата: 01<GTIN>21<Serial>91<Check>...
+   *
+   * GS1 коды могут содержать символ-разделитель \x1D (GS, Group Separator),
+   * который отображается как "" или другие непечатаемые символы.
+   * Этот символ используется как разделитель полей (FNC1).
    */
   function parseHonestMark(rawText) {
     var result = {
@@ -41,32 +45,35 @@
 
     if (!rawText) return result;
 
+    // Удаляем все непечатаемые/управляющие символы (GS \x1D, FNC1, и т.д.)
+    var text = rawText.replace(/[\x00-\x1F\x7F]/g, "");
+
+    console.log("[DataMatrix] parseHonestMark: очищенный текст =", text);
+
     // Паттерны для известных тегов GS1
     var knownTags = {
       "01": { field: "gtin", fixedLength: 14 },
-      21: {
-        field: "serialNumber",
-        fixedLength: null,
-        nextTags: ["91", "92", "93"],
-      },
+      21: { field: "serialNumber", fixedLength: null },
       91: { field: "checkCode", fixedLength: null },
       92: { field: "signature", fixedLength: null },
       93: { field: "cryptoKey", fixedLength: null },
     };
 
     var pos = 0;
-    var textLen = rawText.length;
+    var textLen = text.length;
 
-    while (pos < textLen) {
+    while (pos < textLen - 1) {
       // Ищем следующий тег (2 цифры)
-      var tagMatch = rawText.substring(pos, pos + 2);
+      var tagMatch = text.substring(pos, pos + 2);
+
+      // Проверяем, что это известный тег
       if (knownTags[tagMatch]) {
         var tagInfo = knownTags[tagMatch];
         pos += 2; // пропускаем тег
 
         if (tagInfo.fixedLength) {
           // Фиксированная длина (GTIN всегда 14 цифр)
-          result[tagInfo.field] = rawText.substring(
+          result[tagInfo.field] = text.substring(
             pos,
             pos + tagInfo.fixedLength,
           );
@@ -76,38 +83,21 @@
           var valueStart = pos;
           var valueEnd = textLen;
 
-          // Ищем следующий тег
-          for (var searchPos = pos; searchPos < textLen - 1; searchPos++) {
-            var nextTag = rawText.substring(searchPos, searchPos + 2);
+          // Ищем следующий известный тег
+          for (var searchPos = pos + 2; searchPos < textLen - 1; searchPos++) {
+            var nextTag = text.substring(searchPos, searchPos + 2);
             if (knownTags[nextTag]) {
               valueEnd = searchPos;
               break;
             }
           }
 
-          result[tagInfo.field] = rawText.substring(valueStart, valueEnd);
+          result[tagInfo.field] = text.substring(valueStart, valueEnd);
           pos = valueEnd;
         }
       } else {
-        // Неизвестный тег - пробуем прочитать как 2-значный тег + значение
-        var unknownTag = rawText.substring(pos, pos + 2);
-        pos += 2;
-        var valueStart = pos;
-        var valueEnd = textLen;
-
-        for (var searchPos = pos; searchPos < textLen - 1; searchPos++) {
-          var nextTag = rawText.substring(searchPos, searchPos + 2);
-          if (/^\d{2}$/.test(nextTag)) {
-            valueEnd = searchPos;
-            break;
-          }
-        }
-
-        result.unknown.push({
-          tag: unknownTag,
-          value: rawText.substring(valueStart, valueEnd),
-        });
-        pos = valueEnd;
+        // Пропускаем нераспознанные символы
+        pos++;
       }
     }
 
